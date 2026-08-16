@@ -5,52 +5,71 @@ Encryption service for message content
 from cryptography.fernet import Fernet
 from app.config import settings
 import base64
+import hashlib
 
 
 class EncryptionService:
-    """Service for encrypting and decrypting message content"""
+    """
+    Service for encrypting and decrypting message content
+    """
     
     def __init__(self):
-        """Initialize encryption service with key from settings"""
-        # Use settings key or generate new one
-        self.key = settings.ENCRYPTION_KEY.encode() if isinstance(settings.ENCRYPTION_KEY, str) else settings.ENCRYPTION_KEY
-        self.cipher = Fernet(self.key)
+        """
+        Initialize the encryption service with a key from settings
+        """
+        # Derive a key from the secret key in settings
+        key_material = settings.SECRET_KEY.encode()
+        # Use base64 encoding to create a valid Fernet key
+        key = base64.urlsafe_b64encode(hashlib.sha256(key_material).digest())
+        self.cipher = Fernet(key)
     
-    def encrypt(self, content: str) -> str:
-        """Encrypt content"""
-        if not content:
-            return content
+    def encrypt(self, plaintext: str) -> str:
+        """
+        Encrypt plaintext string
         
-        try:
-            # Encode string to bytes
-            content_bytes = content.encode('utf-8')
-            # Encrypt
-            encrypted = self.cipher.encrypt(content_bytes)
-            # Return as string
-            return encrypted.decode('utf-8')
-        except Exception as e:
-            raise ValueError(f"Encryption failed: {str(e)}")
-    
-    def decrypt(self, content: str) -> str:
-        """Decrypt content"""
-        if not content:
-            return content
+        Args:
+            plaintext: The string to encrypt
+            
+        Returns:
+            Encrypted string (base64 encoded)
+        """
+        if not plaintext:
+            return plaintext
         
-        try:
-            # Encode string to bytes
-            content_bytes = content.encode('utf-8')
-            # Decrypt
-            decrypted = self.cipher.decrypt(content_bytes)
-            # Return as string
-            return decrypted.decode('utf-8')
-        except Exception as e:
-            raise ValueError(f"Decryption failed: {str(e)}")
+        # Encode plaintext to bytes
+        plaintext_bytes = plaintext.encode()
+        
+        # Encrypt
+        encrypted_bytes = self.cipher.encrypt(plaintext_bytes)
+        
+        # Return as string
+        return encrypted_bytes.decode()
     
-    @staticmethod
-    def generate_key() -> str:
-        """Generate a new encryption key"""
-        return Fernet.generate_key().decode('utf-8')
+    def decrypt(self, ciphertext: str) -> str:
+        """
+        Decrypt ciphertext string
+        
+        Args:
+            ciphertext: The encrypted string to decrypt
+            
+        Returns:
+            Decrypted plaintext string
+            
+        Raises:
+            cryptography.fernet.InvalidToken: If decryption fails
+        """
+        if not ciphertext:
+            return ciphertext
+        
+        # Encode ciphertext to bytes
+        ciphertext_bytes = ciphertext.encode()
+        
+        # Decrypt
+        plaintext_bytes = self.cipher.decrypt(ciphertext_bytes)
+        
+        # Return as string
+        return plaintext_bytes.decode()
 
 
-# Initialize encryption service
+# Create a singleton instance
 encryption_service = EncryptionService()
