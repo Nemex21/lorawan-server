@@ -1,58 +1,57 @@
 """
-Message model for LoRaWAN messages
+Message model
 """
 
+from sqlalchemy import Column, String, Boolean, Integer, Float, DateTime, func
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import Column, String, DateTime, Boolean, Integer
-from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
-
-Base = declarative_base()
+from app.models.base import Base
+from typing import Optional
 
 
 class Message(Base):
-    """SQLAlchemy Message model"""
+    """
+    LoRaWAN message model
+    """
     __tablename__ = "messages"
     
-    id = Column(String, primary_key=True)
-    device_id = Column(String, nullable=False, index=True)
+    id = Column(String, primary_key=True, index=True)
+    device_id = Column(String, index=True, nullable=False)
     content = Column(String, nullable=False)
     is_encrypted = Column(Boolean, default=False)
+    rssi = Column(Integer, nullable=True)  # Signal strength
+    snr = Column(Float, nullable=True)  # Signal-to-noise ratio
+    frequency = Column(Float, nullable=True)  # Frequency in MHz
+    data_rate = Column(String, nullable=True)  # Data rate (e.g., SF7BW125)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
-    received_at = Column(DateTime, default=datetime.utcnow)
-    rssi = Column(Integer, nullable=True)
-    snr = Column(Integer, nullable=True)
-    frequency = Column(Integer, nullable=True)
-    data_rate = Column(String, nullable=True)
-    
-    def __repr__(self):
-        return f"<Message(id={self.id}, device_id={self.device_id}, timestamp={self.timestamp})>"
 
 
 class MessageSchema(BaseModel):
-    """Pydantic schema for Message"""
+    """
+    Message response schema
+    """
     id: str
     device_id: str
     content: str
-    is_encrypted: bool = False
-    timestamp: datetime
-    received_at: datetime
+    is_encrypted: bool
     rssi: Optional[int] = None
-    snr: Optional[int] = None
-    frequency: Optional[int] = None
+    snr: Optional[float] = None
+    frequency: Optional[float] = None
     data_rate: Optional[str] = None
+    timestamp: datetime
     
     class Config:
         from_attributes = True
 
 
 class MessageCreateSchema(BaseModel):
-    """Schema for creating a message"""
+    """
+    Message create request schema
+    """
     device_id: str
     content: str
     is_encrypted: bool = False
     rssi: Optional[int] = None
-    snr: Optional[int] = None
-    frequency: Optional[int] = None
+    snr: Optional[float] = None
+    frequency: Optional[float] = None
     data_rate: Optional[str] = None
