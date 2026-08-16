@@ -1,21 +1,7 @@
 """
-Data models package
+Models package
 """
 
-from app.models.message import (
-    MessageType,
-    MessageStatus,
-    MessageCreate,
-    MessageUpdate,
-    MessageResponse,
-    MessageBatch
-)
+from app.models.message import Message, MessageSchema, MessageCreateSchema
 
-__all__ = [
-    "MessageType",
-    "MessageStatus",
-    "MessageCreate",
-    "MessageUpdate",
-    "MessageResponse",
-    "MessageBatch"
-]
+__all__ = ["Message", "MessageSchema", "MessageCreateSchema"]
