@@ -2,6 +2,6 @@
 API routes package
 """
 
-from app.api.routes import messages
+from app.api.routes.messages import router as messages_router
 
-__all__ = ["messages"]
+__all__ = ["messages_router"]
