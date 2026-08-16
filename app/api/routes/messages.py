@@ -1,114 +1,147 @@
 """
-Message API routes
+API routes for messages
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
-from app.models import MessageCreate, MessageUpdate, MessageResponse, MessageBatch, MessageStatus
-from app.database.models import Message
-from app.database.connection import get_db
+from typing import List
+from datetime import datetime
+import uuid
+
+from app.models import Message, MessageSchema, MessageCreateSchema
 from app.services import encryption_service
-from datetime import datetime, timedelta
+from app.database import get_db
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 
-@router.post("/", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-async def create_message(message: MessageCreate, db: Session = Depends(get_db)):
-    """Create a new message"""
-    # Calculate expiration time
-    expires_at = datetime.utcnow() + timedelta(seconds=message.ttl) if message.ttl else None
+@router.post("/", response_model=MessageSchema)
+async def create_message(
+    message_data: MessageCreateSchema,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new message
+    """
+    try:
+        # Generate unique ID
+        message_id = str(uuid.uuid4())
+        
+        # Encrypt content if requested
+        content = message_data.content
+        is_encrypted = message_data.is_encrypted
+        
+        if is_encrypted:
+            content = encryption_service.encrypt(content)
+        
+        # Create message record
+        message = Message(
+            id=message_id,
+            device_id=message_data.device_id,
+            content=content,
+            is_encrypted=is_encrypted,
+            rssi=message_data.rssi,
+            snr=message_data.snr,
+            frequency=message_data.frequency,
+            data_rate=message_data.data_rate
+        )
+        
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        
+        return message
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{message_id}", response_model=MessageSchema)
+async def get_message(
+    message_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a message by ID
+    """
+    message = db.query(Message).filter(Message.id == message_id).first()
     
-    # Encrypt content
-    encrypted_content = encryption_service.encrypt(message.content)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
     
-    db_message = Message(
-        device_id=message.device_id,
-        content=encrypted_content,
-        message_type=message.message_type,
-        status=MessageStatus.PENDING,
-        priority=message.priority,
-        ttl=message.ttl or 3600,
-        encrypted=True,
-        expires_at=expires_at
-    )
+    # Decrypt if encrypted
+    if message.is_encrypted:
+        try:
+            message.content = encryption_service.decrypt(message.content)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Decryption failed: {str(e)}")
     
-    db.add(db_message)
+    return message
+
+
+@router.get("/device/{device_id}", response_model=List[MessageSchema])
+async def get_device_messages(
+    device_id: str,
+    limit: int = Query(100, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all messages from a specific device
+    """
+    messages = db.query(Message).filter(
+        Message.device_id == device_id
+    ).order_by(Message.timestamp.desc()).offset(skip).limit(limit).all()
+    
+    # Decrypt encrypted messages
+    for message in messages:
+        if message.is_encrypted:
+            try:
+                message.content = encryption_service.decrypt(message.content)
+            except Exception:
+                pass
+    
+    return messages
+
+
+@router.get("/", response_model=List[MessageSchema])
+async def list_messages(
+    limit: int = Query(100, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """
+    List all messages
+    """
+    messages = db.query(Message).order_by(
+        Message.timestamp.desc()
+    ).offset(skip).limit(limit).all()
+    
+    # Decrypt encrypted messages
+    for message in messages:
+        if message.is_encrypted:
+            try:
+                message.content = encryption_service.decrypt(message.content)
+            except Exception:
+                pass
+    
+    return messages
+
+
+@router.delete("/{message_id}")
+async def delete_message(
+    message_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a message by ID
+    """
+    message = db.query(Message).filter(Message.id == message_id).first()
+    
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    db.delete(message)
     db.commit()
-    db.refresh(db_message)
     
-    # Decrypt for response
-    db_message.content = encryption_service.decrypt(db_message.content)
-    return db_message
-
-
-@router.get("/{message_id}", response_model=MessageResponse)
-async def get_message(message_id: int, db: Session = Depends(get_db)):
-    """Get a specific message"""
-    db_message = db.query(Message).filter(Message.id == message_id).first()
-    
-    if not db_message:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
-    
-    # Decrypt content
-    db_message.content = encryption_service.decrypt(db_message.content)
-    return db_message
-
-
-@router.get("/device/{device_id}", response_model=MessageBatch)
-async def get_device_messages(device_id: str, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """Get all messages for a device"""
-    messages = db.query(Message).filter(Message.device_id == device_id).offset(skip).limit(limit).all()
-    
-    # Decrypt all messages
-    for msg in messages:
-        msg.content = encryption_service.decrypt(msg.content)
-    
-    total = db.query(Message).filter(Message.device_id == device_id).count()
-    pending = db.query(Message).filter(Message.device_id == device_id, Message.status == MessageStatus.PENDING).count()
-    delivered = db.query(Message).filter(Message.device_id == device_id, Message.status == MessageStatus.DELIVERED).count()
-    failed = db.query(Message).filter(Message.device_id == device_id, Message.status == MessageStatus.FAILED).count()
-    expired = db.query(Message).filter(Message.device_id == device_id, Message.status == MessageStatus.EXPIRED).count()
-    
-    return MessageBatch(
-        total=total,
-        pending=pending,
-        delivered=delivered,
-        failed=failed,
-        expired=expired,
-        messages=messages
-    )
-
-
-@router.patch("/{message_id}", response_model=MessageResponse)
-async def update_message(message_id: int, update: MessageUpdate, db: Session = Depends(get_db)):
-    """Update message status"""
-    db_message = db.query(Message).filter(Message.id == message_id).first()
-    
-    if not db_message:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
-    
-    db_message.status = update.status
-    if update.delivered_at:
-        db_message.delivered_at = update.delivered_at
-    
-    db.commit()
-    db.refresh(db_message)
-    
-    # Decrypt content
-    db_message.content = encryption_service.decrypt(db_message.content)
-    return db_message
-
-
-@router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_message(message_id: int, db: Session = Depends(get_db)):
-    """Delete a message"""
-    db_message = db.query(Message).filter(Message.id == message_id).first()
-    
-    if not db_message:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
-    
-    db.delete(db_message)
-    db.commit()
-    
-    return None
+    return {"detail": "Message deleted successfully"}
