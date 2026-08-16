@@ -1,68 +1,58 @@
 """
-Message data models
+Message model for LoRaWAN messages
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional
 from datetime import datetime
-from enum import Enum
+from typing import Optional
+from sqlalchemy import Column, String, DateTime, Boolean, Integer
+from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel
+
+Base = declarative_base()
 
 
-class MessageType(str, Enum):
-    """Message types"""
-    EMERGENCY = "emergency"
-    NORMAL = "normal"
-    ALERT = "alert"
-    HEARTBEAT = "heartbeat"
+class Message(Base):
+    """SQLAlchemy Message model"""
+    __tablename__ = "messages"
+    
+    id = Column(String, primary_key=True)
+    device_id = Column(String, nullable=False, index=True)
+    content = Column(String, nullable=False)
+    is_encrypted = Column(Boolean, default=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    received_at = Column(DateTime, default=datetime.utcnow)
+    rssi = Column(Integer, nullable=True)
+    snr = Column(Integer, nullable=True)
+    frequency = Column(Integer, nullable=True)
+    data_rate = Column(String, nullable=True)
+    
+    def __repr__(self):
+        return f"<Message(id={self.id}, device_id={self.device_id}, timestamp={self.timestamp})>"
 
 
-class MessageStatus(str, Enum):
-    """Message status"""
-    PENDING = "pending"
-    SENT = "sent"
-    DELIVERED = "delivered"
-    FAILED = "failed"
-    EXPIRED = "expired"
-
-
-class MessageCreate(BaseModel):
-    """Request model for creating a message"""
-    device_id: str = Field(..., description="Device ID")
-    content: str = Field(..., min_length=1, max_length=255, description="Message content")
-    message_type: MessageType = Field(default=MessageType.NORMAL)
-    priority: int = Field(default=5, ge=1, le=10, description="Priority level 1-10")
-    ttl: Optional[int] = Field(default=None, description="Time to live in seconds")
-
-
-class MessageUpdate(BaseModel):
-    """Request model for updating a message"""
-    status: MessageStatus
-    delivered_at: Optional[datetime] = None
-
-
-class MessageResponse(BaseModel):
-    """Response model for a message"""
-    id: int
+class MessageSchema(BaseModel):
+    """Pydantic schema for Message"""
+    id: str
     device_id: str
     content: str
-    message_type: MessageType
-    status: MessageStatus
-    priority: int
-    ttl: int
-    encrypted: bool
-    created_at: datetime
-    delivered_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    is_encrypted: bool = False
+    timestamp: datetime
+    received_at: datetime
+    rssi: Optional[int] = None
+    snr: Optional[int] = None
+    frequency: Optional[int] = None
+    data_rate: Optional[str] = None
     
     class Config:
         from_attributes = True
 
 
-class MessageBatch(BaseModel):
-    """Response model for message batch"""
-    total: int
-    pending: int
-    delivered: int
-    failed: int
-    expired: int
-    messages: list[MessageResponse]
+class MessageCreateSchema(BaseModel):
+    """Schema for creating a message"""
+    device_id: str
+    content: str
+    is_encrypted: bool = False
+    rssi: Optional[int] = None
+    snr: Optional[int] = None
+    frequency: Optional[int] = None
+    data_rate: Optional[str] = None
